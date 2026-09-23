@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         YouTube Open Local With Timestamp
 // @namespace    https://youtube.com/
-// @version      1.3.0
-// @description  Open current YouTube video on local site with current timestamp
+// @version      1.4.0
+// @description  Open current YouTube video on local site with current timestamp (desktop & mobile)
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
+// @match        https://m.youtube.com/*
+// @run-at       document-idle
 // @grant        none
 // ==/UserScript==
 
@@ -73,12 +75,18 @@
   }
 
   function isFullscreen() {
-    return Boolean(
+    if (
       document.fullscreenElement ||
       document.webkitFullscreenElement ||
       document.mozFullScreenElement ||
       document.msFullscreenElement
-    );
+    ) {
+      return true;
+    }
+
+    // iOS Safari: полноэкранное видео не выставляет document.fullscreenElement
+    const video = document.querySelector('video');
+    return Boolean(video && video.webkitDisplayingFullscreen);
   }
 
   function getVideoId() {
@@ -117,24 +125,27 @@
     window.open(url, '_blank');
   }
 
-  function createFloatingButton() {
-    if (document.getElementById(BUTTON_ID)) return;
+  function isCompactLayout() {
+    return Boolean(
+      window.matchMedia && window.matchMedia('(max-width: 600px)').matches
+    );
+  }
 
-    const button = document.createElement('button');
-    button.id = BUTTON_ID;
-    button.textContent = 'Open local';
+  function applyButtonLayout(button) {
+    const compact = isCompactLayout();
 
     button.style.cssText = `
       position: fixed;
-      right: 24px;
-      bottom: 24px;
+      right: calc(16px + env(safe-area-inset-right, 0px));
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       z-index: 999999;
-      padding: 10px 14px;
+      max-width: calc(100vw - 32px);
+      padding: ${compact ? '12px 16px' : '10px 14px'};
       border: none;
       border-radius: 20px;
       background: #ff0000;
       color: white;
-      font-size: 14px;
+      font-size: ${compact ? '16px' : '14px'};
       font-weight: 600;
       cursor: pointer;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -143,22 +154,52 @@
       -webkit-touch-callout: none;
       touch-action: manipulation;
     `;
+  }
+
+  function createFloatingButton() {
+    if (!document.body || document.getElementById(BUTTON_ID)) return;
+
+    const button = document.createElement('button');
+    button.id = BUTTON_ID;
+    button.type = 'button';
+    button.textContent = 'Open local';
+    applyButtonLayout(button);
 
     // долгое нажатие (мышь/тач) — редактирование URL, обычный клик — открытие
     let longPressTimer = null;
     let longPressFired = false;
 
-    button.addEventListener('pointerdown', () => {
+    function startLongPress() {
+      cancelLongPress();
       longPressFired = false;
       longPressTimer = setTimeout(() => {
         longPressFired = true;
         editLocalHost();
       }, LONG_PRESS_MS);
-    });
+    }
 
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((event) => {
-      button.addEventListener(event, () => clearTimeout(longPressTimer));
-    });
+    function cancelLongPress() {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+
+    if (typeof window.PointerEvent !== 'undefined') {
+      button.addEventListener('pointerdown', startLongPress);
+
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((event) => {
+        button.addEventListener(event, cancelLongPress);
+      });
+    } else {
+      // fallback для старых мобильных браузеров без PointerEvent
+      button.addEventListener('touchstart', startLongPress, { passive: true });
+      button.addEventListener('mousedown', startLongPress);
+
+      ['touchend', 'touchcancel', 'touchmove', 'mouseup', 'mouseleave'].forEach((event) => {
+        button.addEventListener(event, cancelLongPress);
+      });
+    }
 
     button.addEventListener('click', () => {
       if (longPressFired) return;
@@ -183,18 +224,33 @@
     }
   }
 
+  function updateButtonLayout() {
+    const button = document.getElementById(BUTTON_ID);
+    if (button) applyButtonLayout(button);
+    updateButtonVisibility();
+  }
+
   function init() {
+    // на мобильной версии body может появиться позже — ждём DOMContentLoaded
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', init, { once: true });
+      return;
+    }
+
     updateButtonVisibility();
 
     const observer = new MutationObserver(updateButtonVisibility);
 
-    observer.observe(document.body, {
+    observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
     });
 
     window.addEventListener('yt-navigate-finish', updateButtonVisibility);
+    window.addEventListener('yt-page-data-updated', updateButtonVisibility);
     window.addEventListener('popstate', updateButtonVisibility);
+    window.addEventListener('resize', updateButtonLayout);
+    window.addEventListener('orientationchange', updateButtonLayout);
 
     document.addEventListener('fullscreenchange', updateButtonVisibility);
     document.addEventListener('webkitfullscreenchange', updateButtonVisibility);
