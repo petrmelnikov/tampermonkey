@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Open Local With Timestamp
 // @namespace    https://youtube.com/
-// @version      1.5.0
+// @version      1.5.1
 // @description  Open current YouTube video on local site with current timestamp (desktop & mobile)
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -108,6 +108,16 @@
   }
 
   function pauseVideo() {
+    // API плеера YouTube (есть и на desktop, и на m.youtube) — держит его состояние в синхроне
+    const player = document.getElementById('movie_player');
+    if (player && typeof player.pauseVideo === 'function') {
+      try {
+        player.pauseVideo();
+      } catch (e) {
+        // падаем на прямую паузу <video> ниже
+      }
+    }
+
     const video = getMainVideo();
     if (video && !video.paused) video.pause();
   }
@@ -136,8 +146,10 @@
       return;
     }
 
-    window.open(url, '_blank');
+    // пауза до window.open: после переключения на новую вкладку мобильный браузер
+    // может заморозить эту страницу, и код после open уже не выполнится
     pauseVideo();
+    window.open(url, '_blank');
   }
 
   function isCompactLayout() {
