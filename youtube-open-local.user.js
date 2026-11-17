@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Open Local With Timestamp
 // @namespace    https://youtube.com/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Open current YouTube video on local site with current timestamp (desktop & mobile)
 // @match        https://www.youtube.com/*
 // @match        https://youtube.com/*
@@ -93,9 +93,23 @@
     return new URLSearchParams(location.search).get('v');
   }
 
+  function getMainVideo() {
+    // основной плеер; на странице могут быть и другие <video> (превью и т.п.)
+    return (
+      document.querySelector('#movie_player video.html5-main-video') ||
+      document.querySelector('video.html5-main-video') ||
+      document.querySelector('video')
+    );
+  }
+
   function getCurrentTimeSeconds() {
-    const video = document.querySelector('video');
+    const video = getMainVideo();
     return video ? Math.floor(video.currentTime || 0) : 0;
+  }
+
+  function pauseVideo() {
+    const video = getMainVideo();
+    if (video && !video.paused) video.pause();
   }
 
   function buildLocalUrl() {
@@ -123,6 +137,7 @@
     }
 
     window.open(url, '_blank');
+    pauseVideo();
   }
 
   function isCompactLayout() {
